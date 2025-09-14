@@ -16,5 +16,4 @@ def upscale(image,scale_factor):
     height,width=image.shape[:2]
     new_dim=(int(height*scale_factor),int(width*scale_factor))
     up_scaled=cv2.cvtColor(image,cv2.COLOR_BGR2RGB)
-    return up_scaled
 gr.Interface(upscale,inputs=[gr.Image(type="numpy"),gr.Slider(1.0,4.0,step=0.1,label="scale_factor")],outputs=gr.Image(type="numpy")).launch()
