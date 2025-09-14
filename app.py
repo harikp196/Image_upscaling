@@ -19,70 +19,115 @@ from torch import nn
 import gradio as gr
 
 
-# ----------------------------
-# FSRCNN model (1-channel Y)
-# ----------------------------
-class FSRCNN(nn.Module):
-    """
-    FSRCNN for single-channel (Y) super-resolution.
-    Args:
-        upscale_factor (int): 2, 3, or 4
-    """
 
-    def __init__(self, upscale_factor: int) -> None:
+
+class FSRCNN(nn.Module):
+    def __init__(self, scale_factor, num_channels=1, d=56, s=12, m=4):
         super(FSRCNN, self).__init__()
-        # Feature extraction
-        self.feature_extraction = nn.Sequential(
-            nn.Conv2d(1, 56, (5, 5), (1, 1), (2, 2)),
-            nn.PReLU(56)
+        self.first_part = nn.Sequential(
+            nn.Conv2d(num_channels, d, kernel_size=5, padding=5 // 2),
+            nn.PReLU(d)
         )
-        # Shrink
-        self.shrink = nn.Sequential(
-            nn.Conv2d(56, 12, (1, 1), (1, 1), (0, 0)),
-            nn.PReLU(12)
-        )
-        # Mapping
-        self.map = nn.Sequential(
-            nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
-            nn.PReLU(12),
-            nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
-            nn.PReLU(12),
-            nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
-            nn.PReLU(12),
-            nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
-            nn.PReLU(12)
-        )
-        # Expand
-        self.expand = nn.Sequential(
-            nn.Conv2d(12, 56, (1, 1), (1, 1), (0, 0)),
-            nn.PReLU(56)
-        )
-        # Deconvolution (learned upsampling)
-        self.deconv = nn.ConvTranspose2d(
-            56, 1, (9, 9),
-            (upscale_factor, upscale_factor),
-            (4, 4),
-            (upscale_factor - 1, upscale_factor - 1)
+        self.mid_part = [nn.Conv2d(d, s, kernel_size=1), nn.PReLU(s)]
+        for _ in range(m):
+            self.mid_part.extend([nn.Conv2d(s, s, kernel_size=3, padding=3 // 2), nn.PReLU(s)])
+        self.mid_part.extend([nn.Conv2d(s, d, kernel_size=1), nn.PReLU(d)])
+        self.mid_part = nn.Sequential(*self.mid_part)
+        self.last_part = nn.ConvTranspose2d(
+            d, num_channels, kernel_size=9,
+            stride=scale_factor, padding=9 // 2,
+            output_padding=scale_factor - 1
         )
 
         self._initialize_weights()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        out = self.feature_extraction(x)
-        out = self.shrink(out)
-        out = self.map(out)
-        out = self.expand(out)
-        out = self.deconv(out)
-        return out
-
-    def _initialize_weights(self) -> None:
-        for m in self.modules():
+    def _initialize_weights(self):
+        for m in self.first_part:
             if isinstance(m, nn.Conv2d):
                 nn.init.normal_(m.weight.data, mean=0.0,
-                                std=sqrt(2 / (m.out_channels * m.weight.data[0][0].numel())))
+                                std=math.sqrt(2 / (m.out_channels * m.weight.data[0][0].numel())))
                 nn.init.zeros_(m.bias.data)
-        nn.init.normal_(self.deconv.weight.data, mean=0.0, std=0.001)
-        nn.init.zeros_(self.deconv.bias.data)
+        for m in self.mid_part:
+            if isinstance(m, nn.Conv2d):
+                nn.init.normal_(m.weight.data, mean=0.0,
+                                std=math.sqrt(2 / (m.out_channels * m.weight.data[0][0].numel())))
+                nn.init.zeros_(m.bias.data)
+        nn.init.normal_(self.last_part.weight.data, mean=0.0, std=0.001)
+        nn.init.zeros_(self.last_part.bias.data)
+
+    def forward(self, x):
+        x = self.first_part(x)
+        x = self.mid_part(x)
+        x = self.last_part(x)
+        return x
+
+
+
+
+# ----------------------------
+# FSRCNN model (1-channel Y)
+# ----------------------------
+# class FSRCNN(nn.Module):
+#     """
+#     FSRCNN for single-channel (Y) super-resolution.
+#     Args:
+#         upscale_factor (int): 2, 3, or 4
+#     """
+
+#     def __init__(self, upscale_factor: int) -> None:
+#         super(FSRCNN, self).__init__()
+#         # Feature extraction
+#         self.feature_extraction = nn.Sequential(
+#             nn.Conv2d(1, 56, (5, 5), (1, 1), (2, 2)),
+#             nn.PReLU(56)
+#         )
+#         # Shrink
+#         self.shrink = nn.Sequential(
+#             nn.Conv2d(56, 12, (1, 1), (1, 1), (0, 0)),
+#             nn.PReLU(12)
+#         )
+#         # Mapping
+#         self.map = nn.Sequential(
+#             nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
+#             nn.PReLU(12),
+#             nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
+#             nn.PReLU(12),
+#             nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
+#             nn.PReLU(12),
+#             nn.Conv2d(12, 12, (3, 3), (1, 1), (1, 1)),
+#             nn.PReLU(12)
+#         )
+#         # Expand
+#         self.expand = nn.Sequential(
+#             nn.Conv2d(12, 56, (1, 1), (1, 1), (0, 0)),
+#             nn.PReLU(56)
+#         )
+#         # Deconvolution (learned upsampling)
+#         self.deconv = nn.ConvTranspose2d(
+#             56, 1, (9, 9),
+#             (upscale_factor, upscale_factor),
+#             (4, 4),
+#             (upscale_factor - 1, upscale_factor - 1)
+#         )
+
+#         self._initialize_weights()
+
+#     def forward(self, x: torch.Tensor) -> torch.Tensor:
+#         out = self.feature_extraction(x)
+#         out = self.shrink(out)
+#         out = self.map(out)
+#         out = self.expand(out)
+#         out = self.deconv(out)
+#         return out
+
+#     def _initialize_weights(self) -> None:
+#         for m in self.modules():
+#             if isinstance(m, nn.Conv2d):
+#                 nn.init.normal_(m.weight.data, mean=0.0,
+#                                 std=sqrt(2 / (m.out_channels * m.weight.data[0][0].numel())))
+#                 nn.init.zeros_(m.bias.data)
+#         nn.init.normal_(self.deconv.weight.data, mean=0.0, std=0.001)
+#         nn.init.zeros_(self.deconv.bias.data)
 
 
 # ----------------------------
@@ -94,41 +139,71 @@ Device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 MODEL_CACHE: dict[int, tuple[FSRCNN, bool]] = {}
 
 
-def try_load_weights(model: nn.Module, weights_path: tp.Optional[str]) -> bool:
-    """Return True if weights successfully loaded, else False."""
-    if not weights_path:
-        print("[FSRCNN] No weights path provided, using Bicubic fallback.")
-        return False
-    if not os.path.isfile(weights_path):
-        print(f"[FSRCNN] Weights not found: {weights_path}. Using Bicubic fallback.")
+def try_load_weights(model, weights_path):
+    """Load weights that use first_part, mid_part, last_part structure."""
+    if not weights_path or not os.path.isfile(weights_path):
+        print(f"[FSRCNN] No valid weights at {weights_path}. Falling back to Bicubic.")
         return False
     try:
-        state = torch.load(weights_path, map_location=Device)
-        if isinstance(state, dict) and "state_dict" in state:
-            state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
-        else:
-            # raw state dict; also strip potential 'module.' prefixes
-            state = {k.replace("module.", ""): v for k, v in state.items()}
-        model.load_state_dict(state, strict=True)
-        print(f"[FSRCNN] Loaded weights: {weights_path}")
+        state_dict = model.state_dict()
+        checkpoint = torch.load(weights_path, map_location=Device)
+        for n, p in checkpoint.items():
+            if n in state_dict.keys():
+                state_dict[n].copy_(p)
+            else:
+                print(f"[FSRCNN] Unexpected key in weights: {n}")
+        model.load_state_dict(state_dict, strict=True)
+        print(f"[FSRCNN] Loaded weights from {weights_path}")
         return True
     except Exception as e:
-        print(f"[FSRCNN] Failed to load weights: {e}. Using Bicubic fallback.")
+        print(f"[FSRCNN] Failed to load weights: {e}")
         return False
+        
+
+# def try_load_weights(model: nn.Module, weights_path: tp.Optional[str]) -> bool:
+#     """Return True if weights successfully loaded, else False."""
+#     if not weights_path:
+#         print("[FSRCNN] No weights path provided, using Bicubic fallback.")
+#         return False
+#     if not os.path.isfile(weights_path):
+#         print(f"[FSRCNN] Weights not found: {weights_path}. Using Bicubic fallback.")
+#         return False
+#     try:
+#         state = torch.load(weights_path, map_location=Device)
+#         if isinstance(state, dict) and "state_dict" in state:
+#             state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
+#         else:
+#             # raw state dict; also strip potential 'module.' prefixes
+#             state = {k.replace("module.", ""): v for k, v in state.items()}
+#         model.load_state_dict(state, strict=True)
+#         print(f"[FSRCNN] Loaded weights: {weights_path}")
+#         return True
+#     except Exception as e:
+#         print(f"[FSRCNN] Failed to load weights: {e}. Using Bicubic fallback.")
+#         return False
 
 
-def get_model(scale: int, weights_path: tp.Optional[str] = None) -> tuple[FSRCNN, bool]:
+def get_model(scale, weights_path=None):
     if scale not in MODEL_CACHE:
-        model = FSRCNN(scale).to(Device).eval()
+        model = FSRCNN(scale_factor=scale).to(Device).eval()
         has_weights = try_load_weights(model, weights_path)
         MODEL_CACHE[scale] = (model, has_weights)
     else:
         model, has_weights = MODEL_CACHE[scale]
-        # If the cache has a randomly-initialized model and user now supplied a path, try once:
-        if not has_weights and weights_path:
-            has_weights = try_load_weights(model, weights_path)
-            MODEL_CACHE[scale] = (model, has_weights)
     return MODEL_CACHE[scale]
+
+# def get_model(scale: int, weights_path: tp.Optional[str] = None) -> tuple[FSRCNN, bool]:
+#     if scale not in MODEL_CACHE:
+#         model = FSRCNN(scale).to(Device).eval()
+#         has_weights = try_load_weights(model, weights_path)
+#         MODEL_CACHE[scale] = (model, has_weights)
+#     else:
+#         model, has_weights = MODEL_CACHE[scale]
+#         # If the cache has a randomly-initialized model and user now supplied a path, try once:
+#         if not has_weights and weights_path:
+#             has_weights = try_load_weights(model, weights_path)
+#             MODEL_CACHE[scale] = (model, has_weights)
+#     return MODEL_CACHE[scale]
 
 
 def rgb_to_ycbcr(img_rgb: np.ndarray) -> np.ndarray:
@@ -255,9 +330,9 @@ with gr.Blocks(title="FSRCNN Super-Resolution") as demo:
                               value="FSRCNN (Y channel)", label="Method")
 
             gr.Markdown("**Optional: load FSRCNN weights (.pth) per scale**")
-            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="e.g., weights_fsrcnn_x2.pth")
-            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="e.g., weights_fsrcnn_x3.pth")
-            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="e.g., weights_fsrcnn_x4.pth")
+            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="models/fsrcnn_x2.pth")
+            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="models/fsrcnn_x3.pth")
+            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="models/fsrcnn_x4.pth")
 
             run_btn = gr.Button("Upscale")
         with gr.Column():
