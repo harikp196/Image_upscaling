@@ -207,9 +207,9 @@ with gr.Blocks(title="FSRCNN Super-Resolution") as demo:
                               value="FSRCNN (Y channel)", label="Method")
 
             gr.Markdown("**Optional: load FSRCNN weights (.pth) per scale**")
-            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="e.g., weights_fsrcnn_x2.pth")
-            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="e.g., weights_fsrcnn_x3.pth")
-            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="e.g., weights_fsrcnn_x4.pth")
+            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="models/fsrcnn_x2.pth")
+            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="models/fsrcnn_x3.pth")
+            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="models/fsrcnn_x4.pth")
 
             run_btn = gr.Button("Upscale")
         with gr.Column():
