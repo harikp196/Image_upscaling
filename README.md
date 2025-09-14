@@ -2,7 +2,7 @@
 title: CSDS553 Case Study 1
 emoji: 💬
 colorFrom: yellow
-colorTo: Green
+colorTo: green
 sdk: gradio
 sdk_version: 5.42.0
 app_file: app.py
