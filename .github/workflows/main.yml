@@ -16,4 +16,4 @@ jobs:
       - name: Push to hub
         env:
           HF_TOKEN: ${{ secrets.HF_Token }}
-        run: git push https://KeerthiVM:$HF_TOKEN@huggingface.co/spaces/SkinCancerDiagnosis/Image_Upscaling main
+        run: git push https://KeerthiVM:$HF_TOKEN@huggingface.co/spaces/SkinCancerDiagnosis/Image_Upscaling main --force
