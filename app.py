@@ -10,6 +10,7 @@
 
 from math import sqrt
 import typing as tp
+import os
 
 import cv2
 import numpy as np
@@ -89,43 +90,64 @@ class FSRCNN(nn.Module):
 # ----------------------------
 Device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Cache one model per scale to avoid re-init each call
-MODEL_CACHE: dict[int, FSRCNN] = {}
+# Cache: scale -> (model, has_valid_weights)
+MODEL_CACHE: dict[int, tuple[FSRCNN, bool]] = {}
 
-def get_model(scale: int, weights_path: tp.Optional[str] = None) -> FSRCNN:
+
+def try_load_weights(model: nn.Module, weights_path: tp.Optional[str]) -> bool:
+    """Return True if weights successfully loaded, else False."""
+    if not weights_path:
+        print("[FSRCNN] No weights path provided, using Bicubic fallback.")
+        return False
+    if not os.path.isfile(weights_path):
+        print(f"[FSRCNN] Weights not found: {weights_path}. Using Bicubic fallback.")
+        return False
+    try:
+        state = torch.load(weights_path, map_location=Device)
+        if isinstance(state, dict) and "state_dict" in state:
+            state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
+        else:
+            # raw state dict; also strip potential 'module.' prefixes
+            state = {k.replace("module.", ""): v for k, v in state.items()}
+        model.load_state_dict(state, strict=True)
+        print(f"[FSRCNN] Loaded weights: {weights_path}")
+        return True
+    except Exception as e:
+        print(f"[FSRCNN] Failed to load weights: {e}. Using Bicubic fallback.")
+        return False
+
+
+def get_model(scale: int, weights_path: tp.Optional[str] = None) -> tuple[FSRCNN, bool]:
     if scale not in MODEL_CACHE:
         model = FSRCNN(scale).to(Device).eval()
-        if weights_path:  # Optional: load pretrained weights
-            state = torch.load(weights_path, map_location=Device)
-            # Supports state dict under "state_dict" or raw
-            if isinstance(state, dict) and "state_dict" in state:
-                state = {k.replace("module.", ""): v for k, v in state["state_dict"].items()}
-            else:
-                state = {k.replace("module.", ""): v for k, v in state.items()}
-            model.load_state_dict(state, strict=True)
-        MODEL_CACHE[scale] = model
+        has_weights = try_load_weights(model, weights_path)
+        MODEL_CACHE[scale] = (model, has_weights)
+    else:
+        model, has_weights = MODEL_CACHE[scale]
+        # If the cache has a randomly-initialized model and user now supplied a path, try once:
+        if not has_weights and weights_path:
+            has_weights = try_load_weights(model, weights_path)
+            MODEL_CACHE[scale] = (model, has_weights)
     return MODEL_CACHE[scale]
 
 
 def rgb_to_ycbcr(img_rgb: np.ndarray) -> np.ndarray:
     # Expect uint8 RGB
-    return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)  # OpenCV uses CrCb order
-    # Note: returns (Y, Cr, Cb)
+    return cv2.cvtColor(img_rgb, cv2.COLOR_RGB2YCrCb)  # (Y, Cr, Cb)
 
 
 def ycbcr_to_rgb(img_ycrcb: np.ndarray) -> np.ndarray:
     return cv2.cvtColor(img_ycrcb, cv2.COLOR_YCrCb2RGB)
 
 
-def run_fsrcnn_on_y(y: np.ndarray, scale: int, model: FSRCNN) -> np.ndarray:
+def run_fsrcnn_on_y(y: np.ndarray, model: FSRCNN) -> np.ndarray:
     """
     y: HxW uint8
-    returns: (H*scale, W*scale) uint8, clipped
+    returns: HxW uint8 (already upscaled by model's deconv stride)
     """
-    # Normalize to 0..1 and shape to NCHW
     y_f = y.astype(np.float32) / 255.0
     tens = torch.from_numpy(y_f).unsqueeze(0).unsqueeze(0).to(Device)  # 1x1xH xW
-    with torch.no_grad():
+    with torch.inference_mode():
         out = model(tens)
     out_np = out.squeeze(0).squeeze(0).clamp(0.0, 1.0).cpu().numpy()
     out_u8 = (out_np * 255.0 + 0.5).astype(np.uint8)
@@ -135,10 +157,14 @@ def run_fsrcnn_on_y(y: np.ndarray, scale: int, model: FSRCNN) -> np.ndarray:
 def fsrcnn_upscale_rgb(img_rgb: np.ndarray, scale: int,
                        weights: tp.Optional[str] = None) -> np.ndarray:
     """
-    Process Y with FSRCNN, upscale Cr/Cb by bicubic, merge back to RGB.
+    Process Y with FSRCNN (requires valid weights), upscale Cr/Cb by bicubic, merge back to RGB.
+    If weights are missing/invalid, this function returns Bicubic instead (safe fallback).
     """
     h, w = img_rgb.shape[:2]
-    model = get_model(scale, weights)
+    model, has_weights = get_model(scale, weights)
+
+    if not has_weights:
+        return bicubic_upscale_rgb(img_rgb, scale)
 
     # Convert to YCrCb
     ycrcb = rgb_to_ycbcr(img_rgb)
@@ -146,8 +172,8 @@ def fsrcnn_upscale_rgb(img_rgb: np.ndarray, scale: int,
     cr = ycrcb[..., 1]
     cb = ycrcb[..., 2]
 
-    # Super-resolve Y channel
-    y_sr = run_fsrcnn_on_y(y, scale, model)
+    # Super-resolve Y channel using FSRCNN
+    y_sr = run_fsrcnn_on_y(y, model)
 
     # Bicubic upscale Cr/Cb to match
     new_w, new_h = w * scale, h * scale
@@ -161,7 +187,22 @@ def fsrcnn_upscale_rgb(img_rgb: np.ndarray, scale: int,
 
 def bicubic_upscale_rgb(img_rgb: np.ndarray, scale: int) -> np.ndarray:
     h, w = img_rgb.shape[:2]
+    if scale <= 1:
+        return img_rgb
     return cv2.resize(img_rgb, (w * scale, h * scale), interpolation=cv2.INTER_CUBIC)
+
+
+def maybe_downscale_for_memory(img_rgb: np.ndarray, max_pixels: int = 8_000_000) -> np.ndarray:
+    """
+    Keep memory in check on very large inputs by shrinking the preview before upscaling.
+    max_pixels is the H*W threshold (default ~8 MP).
+    """
+    h, w = img_rgb.shape[:2]
+    if h * w <= max_pixels:
+        return img_rgb
+    scale = (max_pixels / (h * w)) ** 0.5
+    new_w, new_h = max(1, int(w * scale)), max(1, int(h * scale))
+    return cv2.resize(img_rgb, (new_w, new_h), interpolation=cv2.INTER_AREA)
 
 
 # ----------------------------
@@ -169,25 +210,30 @@ def bicubic_upscale_rgb(img_rgb: np.ndarray, scale: int) -> np.ndarray:
 # ----------------------------
 SCALE_OPTIONS = [2, 3, 4]
 
-def upscale_ui(image: np.ndarray, scale_factor: int, method: str, weights_2x: str, weights_3x: str, weights_4x: str):
+
+def upscale_ui(image: np.ndarray, scale_factor: int, method: str,
+               weights_2x: str, weights_3x: str, weights_4x: str):
     """
     image: RGB numpy from Gradio
     """
     if image is None:
         return None
 
-    # OpenCV expects RGB okay; we keep in RGB space for UI
-    image = image.astype(np.uint8)
+    # Ensure uint8 RGB
+    if image.dtype != np.uint8:
+        image = np.clip(image, 0, 255).astype(np.uint8)
+    if image.ndim == 2:
+        image = np.stack([image, image, image], axis=-1)  # grayscale → RGB
+    elif image.shape[2] == 4:
+        image = image[..., :3]  # drop alpha
+
+    # Optional: guard against gigantic inputs to avoid OOM crashes in Spaces/CPU
+    image = maybe_downscale_for_memory(image, max_pixels=8_000_000)
 
     if method == "FSRCNN (Y channel)":
-        weights_map = {2: weights_2x, 3: weights_3x, 4: weights_4x}
+        weights_map = {2: weights_2x.strip(), 3: weights_3x.strip(), 4: weights_4x.strip()}
         weights = weights_map.get(scale_factor) or None
-        try:
-            out = fsrcnn_upscale_rgb(image, scale_factor, weights)
-        except Exception as e:
-            # Fallback to bicubic if weights wrong/missing
-            print(f"[FSRCNN] Error: {e}. Falling back to Bicubic.")
-            out = bicubic_upscale_rgb(image, scale_factor)
+        out = fsrcnn_upscale_rgb(image, scale_factor, weights)
     else:
         out = bicubic_upscale_rgb(image, scale_factor)
 
@@ -195,9 +241,11 @@ def upscale_ui(image: np.ndarray, scale_factor: int, method: str, weights_2x: st
 
 
 with gr.Blocks(title="FSRCNN Super-Resolution") as demo:
-    gr.Markdown("# 🧠 FSRCNN Image Upscaling (x2/x3/x4)\n"
-                "Upload an image, choose a scale, and select FSRCNN or Bicubic. "
-                "For best quality, load pretrained weights for each scale.")
+    gr.Markdown(
+        "# 🧠 FSRCNN Image Upscaling (x2/x3/x4)\n"
+        "- **Tip:** If no valid FSRCNN weights are provided, the app will automatically fall back to Bicubic.\n"
+        "- Provide `.pth` files trained for each scale to see FSRCNN quality improvements."
+    )
 
     with gr.Row():
         with gr.Column():
@@ -207,9 +255,9 @@ with gr.Blocks(title="FSRCNN Super-Resolution") as demo:
                               value="FSRCNN (Y channel)", label="Method")
 
             gr.Markdown("**Optional: load FSRCNN weights (.pth) per scale**")
-            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="models/fsrcnn_x2.pth")
-            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="models/fsrcnn_x3.pth")
-            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="models/fsrcnn_x4.pth")
+            weights_2x = gr.Textbox(label="Weights path for x2 (optional)", placeholder="e.g., weights_fsrcnn_x2.pth")
+            weights_3x = gr.Textbox(label="Weights path for x3 (optional)", placeholder="e.g., weights_fsrcnn_x3.pth")
+            weights_4x = gr.Textbox(label="Weights path for x4 (optional)", placeholder="e.g., weights_fsrcnn_x4.pth")
 
             run_btn = gr.Button("Upscale")
         with gr.Column():
