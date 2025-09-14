@@ -7,7 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/14vE62a4FYuBlN_vRC_CM6j_7FoJPFaPY
 """
 
-!pip install gradio,opencv_python
+# !pip install gradio,opencv_python
 
 import cv2
 import gradio as gr
