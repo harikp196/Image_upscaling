@@ -78,6 +78,7 @@ def try_load_weights(model, weights_path):
 
 def get_model(scale, weights_path=None):
     if scale not in MODEL_CACHE:
+        print("Not in cache")
         model = FSRCNN(scale_factor=scale).to(Device).eval()
         has_weights = try_load_weights(model, weights_path)
         MODEL_CACHE[scale] = (model, has_weights)
@@ -158,7 +159,9 @@ def upscale_ui(image: np.ndarray, scale_factor: int, method: str,
 
     if method == "FSRCNN (Y channel)":
         weights_map = {2: weights_2x.strip(), 3: weights_3x.strip(), 4: weights_4x.strip()}
+        print("Weights map : ",weights_map,"Scale : ",scale_factor)
         weights = weights_map.get(scale_factor) or None
+        print("Weights : ",weights)
         out = fsrcnn_upscale_rgb(image, scale_factor, weights)
     else:
         out = bicubic_upscale_rgb(image, scale_factor)
