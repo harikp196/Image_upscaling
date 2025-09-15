@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import cv2
 import torch
-from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb, upscale_ui
+from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb, upscale_ui, try_load_weights
 
 def test_fsrcnn_model_initialization():
     """Test that FSRCNN models can be initialized for different scales"""
@@ -25,10 +25,19 @@ def test_color_conversion():
 def test_bicubic_upscaling():
     test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
     
-    for scale in [2, 3, 4]:
+    for scale in [1, 2, 3, 4]:
         upscaled = bicubic_upscale_rgb(test_img, scale)
         expected_shape = (16 * scale, 16 * scale, 3)
         assert upscaled.shape == expected_shape
+
+def test_try_load_weights_error():
+    model = FSRCNN(scale_factor=2)
+    assert try_load_weights(model, None) == False
+
+def test_try_load_weights():
+    model = FSRCNN(scale_factor=2)
+    assert try_load_weights(model, "../models/fsrcnn_x2.pth") == False
+
 
 def test_model_forward_pass():
     for scale in [2, 3, 4]:
@@ -45,6 +54,69 @@ def test_upscale_ui_noimage():
     assert upscale_ui(None, 2, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth") == None
 
 def test_upscale_ui():
+    # Float input
+    float_image = np.random.rand(32, 32, 3).astype(np.float32)
+    
+    result = upscale_ui(
+        image=float_image,
+        scale_factor=2,
+        method="Bicubic",
+        weights_2x="",
+        weights_3x="",
+        weights_4x=""
+    )
+    
+    assert result is not None
+    assert result.dtype == np.uint8
+    assert result.shape == (64, 64, 3)
+
+    """Test upscale_ui with grayscale (2D) input"""
+    grayscale_image = np.random.randint(0, 255, (32, 32), dtype=np.uint8)
+    result = upscale_ui(
+        image=grayscale_image,
+        scale_factor=2,
+        method="FSRCNN (Y channel)",
+        weights_2x="",
+        weights_3x="",
+        weights_4x=""
+    )
+    
+    assert result is not None
+    assert result.dtype == np.uint8
+    assert result.shape == (64, 64, 3)
+
+    """Test upscale_ui with RGBA input"""
+    rgba_image = np.random.randint(0, 255, (32, 32, 4), dtype=np.uint8)
+    
+    result = upscale_ui(
+        image=rgba_image,
+        scale_factor=2,
+        method="Bicubic",
+        weights_2x="",
+        weights_3x="",
+        weights_4x=""
+    )
+    assert result is not None
+    assert result.dtype == np.uint8
+    assert result.shape == (64, 64, 3)
+
+    downloadscale_image = np.random.randint(0, 255, (4000, 4000, 3), dtype=np.uint8)
+    
+    result = upscale_ui(
+        image=downloadscale_image,
+        scale_factor=2,
+        method="FSRCNN (Y channel)",
+        weights_2x="",
+        weights_3x="",
+        weights_4x=""
+    )
+    
+    assert result is not None
+    assert result.dtype == np.uint8
+    assert result.shape == (5656, 5656, 3)
+
+
+
     test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
     for scale in [2, 3, 4]:
         upscaled = upscale_ui(test_img, scale, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth")

@@ -61,7 +61,7 @@ def try_load_weights(model, weights_path):
         return False
     try:
         state_dict = model.state_dict()
-        checkpoint = torch.load(weights_path, map_location=Device)
+        checkpoint = torch.load(weights_path, map_location=Device, weights_only=False)
         for n, p in checkpoint.items():
             if n in state_dict.keys():
                 state_dict[n].copy_(p)
