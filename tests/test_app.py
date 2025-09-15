@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 import cv2
 import torch
-from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb
+from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb, upscale_ui
 
 def test_fsrcnn_model_initialization():
     """Test that FSRCNN models can be initialized for different scales"""
@@ -40,6 +40,23 @@ def test_model_forward_pass():
         expected_width = 32 * scale
         assert output.shape[2] == expected_height
         assert output.shape[3] == expected_width
+
+def test_upscale_ui_noimage():
+    assert upscale_ui(None, 2, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth") == None
+
+def test_upscale_ui():
+    test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
+    for scale in [2, 3, 4]:
+        upscaled = upscale_ui(test_img, scale, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth")
+        expected_shape = (16 * scale, 16 * scale, 3)
+        assert upscaled.shape == expected_shape
+
+def test_upscale_ui_bicubic():
+    test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
+    for scale in [2, 3, 4]:
+        upscaled = upscale_ui(test_img, scale, "Bicubic", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth")
+        expected_shape = (16 * scale, 16 * scale, 3)
+        assert upscaled.shape == expected_shape
 
 if __name__ == "__main__":
     pytest.main([__file__])
