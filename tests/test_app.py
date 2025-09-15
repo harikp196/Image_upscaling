@@ -1,6 +1,7 @@
 import pytest
 import numpy as np
 import cv2
+import torch
 from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb
 
 def test_fsrcnn_model_initialization():
