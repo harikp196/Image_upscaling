@@ -5,11 +5,9 @@ import torch
 from app import FSRCNN, rgb_to_ycbcr, ycbcr_to_rgb, bicubic_upscale_rgb, upscale_ui, try_load_weights
 
 def test_fsrcnn_model_initialization():
-    """Test that FSRCNN models can be initialized for different scales"""
     for scale in [2, 3, 4]:
         model = FSRCNN(scale_factor=scale)
         assert model is not None
-        # Check model architecture components
         assert hasattr(model, 'first_part')
         assert hasattr(model, 'mid_part')
         assert hasattr(model, 'last_part')
@@ -30,9 +28,26 @@ def test_bicubic_upscaling():
         expected_shape = (16 * scale, 16 * scale, 3)
         assert upscaled.shape == expected_shape
 
-def test_try_load_weights_error():
+def test_try_load_weights_error(tmp_path):
+    model = FSRCNN(scale_factor=2)
+    fake_weights = {
+        "last_part.bias": torch.zeros(1),
+        "a_fake_key.weight": torch.randn(10)
+    }
+    fake_weights_file = "test.pth"
+    torch.save(fake_weights, fake_weights_file)
+    result = try_load_weights(model, str(fake_weights_file))
+    assert result == True
+
     model = FSRCNN(scale_factor=2)
     assert try_load_weights(model, None) == False
+
+
+    model = FSRCNN(scale_factor=2)
+    corrupted_file = tmp_path/"corrupted.pth"
+    corrupted_file.write_text("this is just a text file, not a model!")
+    result = try_load_weights(model, str(corrupted_file))
+    assert result == False
 
 def test_try_load_weights():
     model = FSRCNN(scale_factor=2)
