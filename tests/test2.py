@@ -6,7 +6,7 @@ import torch
 import pytest
 
 # Adjust this import if your file isn't named fsrcnn_app.py
-import fsrcnn_app as app
+import app as app
 
 
 @pytest.fixture(autouse=True)
