@@ -216,7 +216,7 @@ import gradio as gr
 
 
 class FSRCNN(nn.Module):
-    def _init_(self, scale_factor, num_channels=1, d=56, s=12, m=4):
+    def __init__(self, scale_factor, num_channels=1, d=56, s=12, m=4):
         super(FSRCNN, self)._init_()
         self.first_part = nn.Sequential(
             nn.Conv2d(num_channels, d, kernel_size=5, padding=5 // 2),
