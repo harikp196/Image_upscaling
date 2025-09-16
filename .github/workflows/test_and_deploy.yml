@@ -52,7 +52,7 @@ jobs:
           
       - name: Push to hub
         env:
-          HF_TOKEN: ${{ secrets.HF_TOKEN }} # Make sure this secret is named HF_TOKEN in your repo
+          HF_TOKEN: ${{ secrets.HF_TOKEN }}
         run: git push https://KeerthiVM:$HF_TOKEN@huggingface.co/spaces/SkinCancerDiagnosis/Image_Upscaling main --force
 
 
@@ -61,12 +61,12 @@ jobs:
     needs: [test, sync-to-hub] 
     if: success()             
     steps:
-      - name: Send Slack notification on success 🚀
+      - name: Send Slack notification on success
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_SECRET }}
           SLACK_COLOR: 'good' 
-          SLACK_TITLE: 'Build Passed & Deployed! 🎉'
+          SLACK_TITLE: 'Build Successfully Passed & Deployed for Image Upscaling task!
           SLACK_MESSAGE: 'Build for `${{ github.repository }}` passed. Commit by @${{ github.actor }}.'
           SLACK_FOOTER: 'Changes: ${{ github.event.head_commit.message }}'
 
@@ -75,11 +75,11 @@ jobs:
     needs: test              
     if: failure()           
     steps:
-      - name: Send Slack notification on failure 🚨
+      - name: Send Slack notification on failure
         uses: rtCamp/action-slack-notify@v2
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_SECRET }}
           SLACK_COLOR: 'danger' 
-          SLACK_TITLE: 'Build FAILED! ❌'
+          SLACK_TITLE: 'Build FAILED for Image Upscaling task!'
           SLACK_MESSAGE: '<!here> Build for `${{ github.repository }}` failed. Commit by @${{ github.actor }}. Deployment was skipped.'
           SLACK_FOOTER: '<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|Click to View Failed Run>'
