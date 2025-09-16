@@ -418,5 +418,5 @@ with gr.Blocks(title="FSRCNN Super-Resolution", theme=custom_theme) as demo:
     )
 
 
-if _name_ == "_main_":
+if __name__ == "__main__": # pragma: no cover
     demo.launch()
