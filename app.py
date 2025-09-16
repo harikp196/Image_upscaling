@@ -383,9 +383,7 @@ custom_theme = gr.themes.Default().set(
 
 with gr.Blocks(title="FSRCNN Super-Resolution", theme=custom_theme) as demo:
     gr.Markdown(
-        "# 🧠 FSRCNN Image Upscaling (x2/x3/x4)\n"
-        "- Use deep learning (FSRCNN) or traditional bicubic interpolation for high-quality image upscaling.\n"
-        "- Tip: Pretrained FSRCNN weights for each scale are bundled within the app."
+        "# 🧠 FSRCNN Image Upscaling"
     )
 
     with gr.Row():
