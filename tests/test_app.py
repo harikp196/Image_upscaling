@@ -66,7 +66,7 @@ def test_model_forward_pass():
         assert output.shape[3] == expected_width
 
 def test_upscale_ui_noimage():
-    assert upscale_ui(None, 2, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth") == None
+    assert upscale_ui(None, 2, "FSRCNN (Y channel)") == (None, 'Please upload an image.')
 
 def test_upscale_ui():
     # Float input
@@ -75,15 +75,12 @@ def test_upscale_ui():
     result = upscale_ui(
         image=float_image,
         scale_factor=2,
-        method="Bicubic",
-        weights_2x="",
-        weights_3x="",
-        weights_4x=""
+        method="Bicubic"
     )
     
-    assert result is not None
-    assert result.dtype == np.uint8
-    assert result.shape == (64, 64, 3)
+    assert result[0] is not None
+    assert result[0].dtype == np.uint8
+    assert result[0].shape == (64, 64, 3)
 
     """Test upscale_ui with grayscale (2D) input"""
     grayscale_image = np.random.randint(0, 255, (32, 32), dtype=np.uint8)
@@ -91,14 +88,11 @@ def test_upscale_ui():
         image=grayscale_image,
         scale_factor=2,
         method="FSRCNN (Y channel)",
-        weights_2x="",
-        weights_3x="",
-        weights_4x=""
     )
     
-    assert result is not None
-    assert result.dtype == np.uint8
-    assert result.shape == (64, 64, 3)
+    assert result[0] is not None
+    assert result[0].dtype == np.uint8
+    assert result[0].shape == (64, 64, 3)
 
     """Test upscale_ui with RGBA input"""
     rgba_image = np.random.randint(0, 255, (32, 32, 4), dtype=np.uint8)
@@ -107,13 +101,10 @@ def test_upscale_ui():
         image=rgba_image,
         scale_factor=2,
         method="Bicubic",
-        weights_2x="",
-        weights_3x="",
-        weights_4x=""
     )
-    assert result is not None
-    assert result.dtype == np.uint8
-    assert result.shape == (64, 64, 3)
+    assert result[0] is not None
+    assert result[0].dtype == np.uint8
+    assert result[0].shape == (64, 64, 3)
 
     downloadscale_image = np.random.randint(0, 255, (4000, 4000, 3), dtype=np.uint8)
     
@@ -121,29 +112,26 @@ def test_upscale_ui():
         image=downloadscale_image,
         scale_factor=2,
         method="FSRCNN (Y channel)",
-        weights_2x="",
-        weights_3x="",
-        weights_4x=""
     )
     
-    assert result is not None
-    assert result.dtype == np.uint8
-    assert result.shape == (5656, 5656, 3)
+    assert result[0] is not None
+    assert result[0].dtype == np.uint8
+    assert result[0].shape == (5656, 5656, 3)
 
 
 
     test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
     for scale in [2, 3, 4]:
-        upscaled = upscale_ui(test_img, scale, "FSRCNN (Y channel)", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth")
+        upscaled = upscale_ui(test_img, scale, "FSRCNN (Y channel)")
         expected_shape = (16 * scale, 16 * scale, 3)
-        assert upscaled.shape == expected_shape
+        assert upscaled[0].shape == expected_shape
 
 def test_upscale_ui_bicubic():
     test_img = np.random.randint(0, 255, (16, 16, 3), dtype=np.uint8)
     for scale in [2, 3, 4]:
-        upscaled = upscale_ui(test_img, scale, "Bicubic", "models/fsrcnn_x2.pth", "models/fsrcnn_x3.pth", "models/fsrcnn_x4.pth")
+        upscaled = upscale_ui(test_img, scale, "Bicubic")
         expected_shape = (16 * scale, 16 * scale, 3)
-        assert upscaled.shape == expected_shape
+        assert upscaled[0].shape == expected_shape
 
 if __name__ == "__main__":
     pytest.main([__file__])
